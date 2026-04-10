@@ -1,0 +1,37 @@
+name: Update Inventory Agent
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/infra/agents/inventory-agent.json'
+      - 'src/prompts/inventoryAgentPrompt.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  update-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2.1.1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build payload and deploy agent version
+        run: |
+          INSTRUCTIONS=$(python3 -c "import json; print(json.dumps(open('src/prompts/inventoryAgentPrompt.txt').read()))")
+          jq --arg model "${{ secrets.GPT_DEPLOYMENT }}" \
+             --argjson instructions "$INSTRUCTIONS" \
+             '.definition.model = $model | .definition.instructions = $instructions' \
+             src/infra/agents/inventory-agent.json > /tmp/payload.json
+          az rest --method POST \
+            --url "${{ secrets.FOUNDRY_ENDPOINT }}/agents/inventory-agent/versions?api-version=2025-11-15-preview" \
+            --resource "https://ai.azure.com" \
+            --body @/tmp/payload.json
